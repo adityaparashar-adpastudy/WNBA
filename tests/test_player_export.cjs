@@ -20,3 +20,11 @@ assert.equal(e.evidence(data,[partial]).mode,'boxscore_partial');assert.equal(e.
 const historical=e.rows(data,[partial],'box_injury');assert.equal(historical.length,1);assert.equal(historical[0].team,'Historical Team');assert.equal(historical[0].confidence,'reported');assert.equal(historical[0].games_missed,'');assert.equal(historical[0].record_type,'boxscore_reported_absence');assert.equal(e.rows(data,[partial],'injury').length,0);
 assert.equal(e.evidence(data,[game,partial]).mode,'official');assert.equal(e.rows(data,[game],'injury')[0].confidence,'confirmed');
 console.log('Historical evidence and provenance checks passed');
+// The doctor's view must keep actual absence evidence separate from pregame listings.
+const boxOnly={...partial,injury_dnp:2,illness_dnp:0,other_dnp:3,unknown_dnp:1,participation_unknown:4};
+let sources=e.sourceSummary([boxOnly]);assert.equal(sources.boxes.counts.injury,2);assert.equal(sources.reports.counts.injury,null);assert.equal(sources.reports.available,0);assert.equal(sources.boxes.participationUnknown,4);
+const pdfOnly={box_score_status:'unavailable',official_report:{status:'available'},official_report_counts:{injury:5,illness:1,other:0,unknown:0}};
+sources=e.sourceSummary([boxOnly,pdfOnly]);assert.equal(sources.boxes.counts.injury,2);assert.equal(sources.reports.counts.injury,5);assert.equal(sources.boxes.available,1);assert.equal(sources.reports.available,1);
+sources=e.sourceSummary([]);assert.equal(sources.boxes.counts.injury,null);assert.equal(sources.reports.counts.injury,null);
+sources=e.sourceSummary([{...boxOnly,injury_dnp:0}]);assert.equal(sources.boxes.counts.injury,0);assert.equal(e.sourceSummary([{box_score_status:'available'}]).boxes.counts.injury,null);
+console.log('Separate-source display checks passed (missing data, true zero, mixed coverage)');
