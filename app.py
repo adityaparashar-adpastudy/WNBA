@@ -17,8 +17,15 @@ jobs={}; lock=Lock()
 @app.get('/')
 def index(): return render_template('index.html')
 
+def season_options():
+    current=date.today().year
+    return dict(min_season=1997,current_season=current,max_season=current+1)
+
+@app.get('/api/seasons')
+def seasons(): return jsonify(season_options())
+
 @app.get('/api/teams')
-def catalog(): return jsonify(teams=teams(),max_season=date.today().year)
+def catalog(): return jsonify(teams=teams(),**season_options())
 
 @app.get('/api/snapshot')
 def snapshot():
@@ -33,7 +40,7 @@ def query():
         team=str(payload.get('team','ind')).lower()
         if not team.isalnum() or len(team)>12: raise ValueError('Invalid team')
         season=int(payload.get('season',2025));limit=int(payload.get('limit',10));kind=int(payload.get('season_type',2))
-        if not 1997<=season<=date.today().year or limit not in (5,10,20,0) or kind not in (2,3): raise ValueError('Invalid season, game limit, or season type')
+        if not 1997<=season<=season_options()['max_season'] or limit not in (5,10,20,0) or kind not in (2,3): raise ValueError('Invalid season, game limit, or season type')
     except (ValueError,TypeError) as e: return jsonify(error=str(e)),400
     with lock:
         for old in [k for k,v in jobs.items() if time.time()-v['created']>3600 and v['status']!='running']: jobs.pop(old)

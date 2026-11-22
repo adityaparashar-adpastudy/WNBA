@@ -23,7 +23,7 @@ cd into this WNBA folder, then:
 FEATURES
 - Overview with four core metrics, participation chart and utilization ring.
 - Teams discovered from ESPN, plus historical 2025 teams for past-season queries.
-- Single-year seasons, regular season/playoff selection, first 5/10/20 or all games.
+- Single-year seasons through next year, regular season/playoff selection, first 5/10/20 or all games.
 - Game search, per-game player details and source links.
 - CSV export of games matching the current text search.
 - Background queries with progress, partial-failure reporting and response caching.
@@ -59,8 +59,8 @@ SAVE A DIFFERENT STARTUP SNAPSHOT
 CHECKS
   python -m unittest discover -s tests -v
   node --check static/app.js
-Seven tests cover minute parsing, DNP evidence, duplicate player groups, missing
-team blocks, Cup exclusion, failed-game coverage and API input validation.
+Twelve tests cover metrics, API validation, future-season acceptance, unpublished
+schedules, source year filtering, and expiring team/schedule caches.
 Live ESPN collection and browser query/player/search flows also verified.
 
 FILES
@@ -79,3 +79,11 @@ SOURCES
 https://www.espn.com/wnba/
 https://site.api.espn.com/apis/site/v2/sports/basketball/wnba
 https://rulebook.wnba.com/rule-no-5-scoring-and-timing/
+
+FUTURE SEASONS
+The UI and backend automatically allow seasons through current year + 1.
+Next year is labeled upcoming. No completed games produces an informative
+empty state, rather than an injury count or full-coverage claim.
+Schedule cache expires after 5 minutes; team catalog cache after 24 hours.
+Refresh source fetches immediately. Older box-score responses stay cached.
+Restart the local server after code updates and refresh your browser.

@@ -1,4 +1,5 @@
 """WNBA data adapter, consolidated from the supplied ESPN season scrapers."""
+from datetime import date
 import hashlib
 import json
 import os
@@ -17,7 +18,10 @@ FALLBACK = [dict(id=tid, abbreviation=code, displayName=name) for tid,code,name 
 def fetch(path, params=None, refresh=False):
     key = hashlib.sha256((path + json.dumps(params or {}, sort_keys=True)).encode()).hexdigest()
     file = CACHE / (key + '.json')
-    if file.exists() and not refresh:
+    # Mutable schedules and team catalogs must not remain cached forever.
+    max_age = 300 if path.endswith('/schedule') else 86400 if path == '/teams' else None
+    fresh = file.exists() and (max_age is None or time.time()-file.stat().st_mtime < max_age)
+    if fresh and not refresh:
         return json.loads(file.read_text())
     response = requests.get(BASE + path, params=params, timeout=(10, 30), headers={'User-Agent':'WNBA-Research-Dashboard/1.0'})
     response.raise_for_status()
@@ -80,13 +84,20 @@ def parse_players(summary, team_id):
     return list(players.values())
 
 def collect(team, season, season_type=2, limit=10, progress=None, refresh=False):
-    schedule = fetch(f'/teams/{team}/schedule', {'season':season,'seasontype':season_type}, refresh)
+    try:
+        schedule = fetch(f'/teams/{team}/schedule', {'season':season,'seasontype':season_type}, refresh)
+    except requests.HTTPError as error:
+        # ESPN may not publish a schedule until closer to a future season.
+        if season <= date.today().year or error.response is None or error.response.status_code != 404:
+            raise
+        team_info = next((t for t in teams() if str(t.get('id')) == str(team) or t.get('abbreviation','').lower() == str(team).lower()), {'id':str(team),'displayName':'WNBA team'})
+        schedule = {'team':team_info,'events':[]}
     team_info = schedule.get('team',{})
     tid = str(team_info.get('id',''))
     events=[]
     for event in schedule.get('events',[]):
         comp = event.get('competitions',[{}])[0]
-        if event.get('season',{}).get('year',season) != season: continue
+        if str(event.get('season',{}).get('year') or event.get('date','')[:4]) != str(season): continue
         if int(event.get('seasonType',{}).get('type',season_type)) != season_type: continue
         # Cup qualifying games count; the separately flagged Cup final does not.
         if comp.get('type',{}).get('type') == 'commissioners-cup': continue
