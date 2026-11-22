@@ -62,9 +62,20 @@ def parse_players(summary, team_id):
             played = not dnp and mp is not None
             reason = str(row.get('reason') or '')
             # Evidence label only; this is not a count of in-game injuries.
-            injury = not played and bool(re.search(r'injur|illness|ankle|knee|acl|concussion|hamstring|shoulder|back spasms|wrist|foot|achilles|calf|groin', reason, re.I))
+            injury = not played and bool(re.search(r'injur|ankle|back|knee|acl|concussion|hamstring|shoulder|wrist|hand|finger|nose|eye|toe|foot|achilles|calf|groin', reason, re.I))
             pid = str(athlete.get('id') or athlete.get('displayName','Unknown'))
-            players[pid] = dict(id=pid,name=athlete.get('displayName','Unknown'),position=athlete.get('position',{}).get('abbreviation','—'),minutes=mp if played else None,played=played,reason=reason,injury_dnp=injury,starter=bool(row.get('starter')),points=stats.get('PTS',stats.get('POINTS','—')))
+            players[pid] = dict(
+                id=pid,
+                name=athlete.get('displayName','Unknown'),
+                position=athlete.get('position',{}).get('abbreviation','—'),
+                minutes=mp if played else None,
+                played=played,reason=reason,
+                injury_dnp=injury,
+                starter=bool(row.get('starter')),
+                points=stats.get('PTS',stats.get('POINTS','—'))
+                )
+
+         
     if not players: raise ValueError('No player rows returned')
     return list(players.values())
 
