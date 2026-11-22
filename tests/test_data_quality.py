@@ -8,9 +8,9 @@ from collector import classify_dnp, dnp_counts, game_dates, parse_players
 class DnpCategoryTests(unittest.TestCase):
     def test_audited_health_reasons(self):
         # Source language, not clinical inference: mixed/unspecified health stays unknown.
-        expected={'ILLNESS':'illness','LEFT THUMB':'injury','RIGHT LEG':'injury',
+        expected={'ILLNESS':'illness','INJURY/ILLNESS - LEFT KNEE':'injury','RIGHT HEAD':'injury','LEFT THUMB':'injury','RIGHT LEG':'injury',
                   'RIGHT LOWER LEG':'injury','LOWER LEG':'injury','LEFT QUAD':'injury',
-                  'LEFT HIP DISCOMFORT':'injury','COLLAPSED LUNG':'unknown',
+                  'LEFT HIP DISCOMFORT':'injury','LEFT PINKY; DISLOCATION':'injury','LEFT ADDUCTOR; TIGHTNESS':'injury','LEFT THIGH; NA':'injury','LEFT ARM; ARM':'injury','COLLAPSED LUNG':'unknown',
                   'INJURY/ILLNESS':'unknown','RETURN TO COMPETITION RECONDITIONING':'unknown'}
         for reason,category in expected.items():
             with self.subTest(reason=reason):
@@ -19,12 +19,12 @@ class DnpCategoryTests(unittest.TestCase):
                 self.assertTrue(actual['health_dnp'])
     def test_unknown_and_non_injury_reasons(self):
         for reason in ["COACH'S DECISION",'NOT WITH TEAM','NOT WITH TEAM - PREGNANCY',
-                       'PERSONAL REASONS','REST','DID NOT DRESS','NOT INJURY RELATED','NON-INJURY RELATED']:
+                       "COACH'S DECISION - DEVELOPMENTAL PLAYER","COACH'S DECISION - COACH ’ S DECISION",'LEAGUE SUSPENSION','REST - N/A','N/A; REST','PERSONAL REASONS','REST','NOT INJURY RELATED','NON-INJURY RELATED']:
             with self.subTest(reason=reason):
                 result=classify_dnp(reason)
                 self.assertEqual(result['dnp_category'],'other')
                 self.assertFalse(result['health_dnp'])
-        for reason in ['',None,'UNRECOGNIZED REASON','EYEWITNESS']:
+        for reason in ['',None,'UNRECOGNIZED REASON','EYEWITNESS','DID NOT DRESS','DID NOT PLAY','INACTIVE']:
             self.assertEqual(classify_dnp(reason)['dnp_category'],'unknown')
     def test_reason_normalization(self):
         self.assertEqual(classify_dnp(' DNP - left   thumb ')['dnp_category'],'injury')

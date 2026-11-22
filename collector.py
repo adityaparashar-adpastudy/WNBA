@@ -7,10 +7,11 @@ import os
 from pathlib import Path
 import re
 import time
+import math
 import requests
 
 BASE = 'https://site.api.espn.com/apis/site/v2/sports/basketball/wnba'
-CACHE = Path(__file__).parent / 'data' / 'cache'
+CACHE = Path(os.environ.get('WNBA_CACHE_DIR',Path(__file__).parent / 'data' / 'cache'))
 # Offline selector for the historical 2025 season; online catalog is preferred.
 TEAMS_2025 = [('20','ATL','Atlanta Dream'),('19','CHI','Chicago Sky'),('18','CONN','Connecticut Sun'),('3','DAL','Dallas Wings'),('129689','GS','Golden State Valkyries'),('5','IND','Indiana Fever'),('17','LV','Las Vegas Aces'),('6','LA','Los Angeles Sparks'),('8','MIN','Minnesota Lynx'),('9','NY','New York Liberty'),('11','PHX','Phoenix Mercury'),('14','SEA','Seattle Storm'),('16','WSH','Washington Mystics')]
 # Use abbreviations as route slugs, avoiding source-specific numeric IDs.
@@ -20,7 +21,7 @@ def fetch(path, params=None, refresh=False):
     key = hashlib.sha256((path + json.dumps(params or {}, sort_keys=True)).encode()).hexdigest()
     file = CACHE / (key + '.json')
     # Mutable schedules and team catalogs must not remain cached forever.
-    max_age = 300 if path.endswith('/schedule') else 86400 if path == '/teams' else None
+    max_age = 300 if path.endswith('/schedule') else 86400 if path == '/teams' else 3600
     fresh = file.exists() and (max_age is None or time.time()-file.stat().st_mtime < max_age)
     if fresh and not refresh:
         return json.loads(file.read_text())
@@ -46,9 +47,12 @@ def minutes(value):
     if value in (None, '', '--', 'DNP'): return None
     try:
         if ':' in str(value):
+            if not re.fullmatch(r'\d+:\d{2}',str(value)):return None
             m,s = str(value).split(':')
-            return int(m) + float(s)/60
-        return float(value)
+            result=int(m)+int(s)/60
+            return result if int(s)<60 else None
+        result=float(value)
+        return result if math.isfinite(result) and result>=0 else None
     except (ValueError, TypeError): return None
 
 
@@ -106,18 +110,24 @@ def game_dates(summary, event):
 
 # These are source-text categories, not diagnoses or incident counts. Keep
 # ambiguous health reports unknown rather than guessing injury versus illness.
-INJURY_REASON = re.compile(r"\b(?:injur\w*|ankle|back|knee|acl|mcl|pcl|lcl|concussion|hamstring|shoulder|wrist|hand|finger|thumb|nose|eye|toe|foot|achilles|calf|groin|hip|quad\w*|elbow|rib\w*|leg|neck|abdomen|abdominal|chest|sprain\w*|strain\w*|fractur\w*|contusion|laceration|soreness)\b", re.I)
+INJURY_REASON = re.compile(r"\b(?:injur\w*|arm|thigh|adductor|pinky|dislocat\w*|head|face|facial|heel|shin|pelvi\w*|tibia\w*|fibula\w*|tendon\w*|bicep\w*|tricep\w*|metatarsal\w*|patella\w*|oblique\w*|glute\w*|menisc\w*|ankle|back|knee|acl|mcl|pcl|lcl|concussion|hamstring|shoulder|wrist|hand|finger|thumb|nose|eye|toe|foot|achilles|calf|groin|hip|quad\w*|elbow|rib\w*|leg|neck|abdomen|abdominal|chest|sprain\w*|strain\w*|fractur\w*|contusion|laceration|soreness)\b", re.I)
 OTHER_REASONS = {"COACH'S DECISION", 'NOT WITH TEAM', 'PERSONAL', 'PERSONAL REASONS',
-                 'REST', 'SUSPENDED BY LEAGUE', 'PLAYER SUSPENDED', 'SUSPENSION',
-                 'OVERSEAS', 'DID NOT DRESS', 'DID NOT PLAY', 'INACTIVE',
+                 'REST', 'LEAGUE SUSPENSION', 'SUSPENDED BY LEAGUE', 'PLAYER SUSPENDED', 'SUSPENSION',
+                 'OVERSEAS',
                  'NOT WITH TEAM - PREGNANCY', 'NOT INJURY RELATED', 'NON-INJURY RELATED'}
 
 def classify_dnp(reason):
     normalized = re.sub(r'\s+',' ',str(reason or '').upper().replace('’',"'")).strip()
     normalized = re.sub(r'^DNP\s*[-:]\s*','',normalized)
+    normalized = re.sub(r'^INJURY\s*/\s*ILLNESS\s*[-:]\s*(?=\S)','',normalized)
+    detail_without_umbrella=re.sub(r'INJURY\s*/\s*ILLNESS','',normalized)
+    if re.search(r'[A-Z]',detail_without_umbrella):normalized=detail_without_umbrella.strip(' -:;')
     if not normalized:
         return dict(dnp_category='unknown',health_dnp=False,classification_note='No source reason reported')
-    if normalized in OTHER_REASONS or re.search(r'\b(?:NOT|NON)[ -]INJURY[ -]RELATED\b',normalized):
+    if normalized in {'DID NOT PLAY','DID NOT DRESS','INACTIVE','DNP'}:
+        return dict(dnp_category='unknown',health_dnp=False,classification_note='Participation status does not establish an absence reason')
+    known_nonmedical=bool(re.match(r"^(?:COACH(?:\s*'\s*S|ES)?\s+DECISION|PERSONAL(?: REASONS)?|(?:N/?A[;:\s]+)?REST)(?:\s*[-;:]|$)",normalized))
+    if known_nonmedical or normalized in OTHER_REASONS or re.search(r'\b(?:NOT|NON)[ -]INJURY[ -]RELATED\b',normalized):
         return dict(dnp_category='other',health_dnp=False,classification_note='Reported non-injury reason or participation status')
     injury = bool(INJURY_REASON.search(normalized))
     illness = bool(re.search(r'\b(?:ILLNESS|ILL|SICKNESS|FLU|COVID(?:-19)?)\b',normalized))
@@ -133,7 +143,7 @@ def dnp_counts(players):
     counts = {category:0 for category in ('injury','illness','other','unknown')}
     health_unspecified = 0
     for player in players:
-        if player['played']: continue
+        if player['played'] is not False: continue
         category = player.get('dnp_category') or 'unknown'
         counts[category] += 1
         health_unspecified += int(category == 'unknown' and player.get('health_dnp',False))
@@ -152,11 +162,11 @@ def parse_players(summary, team_id):
             stats = dict(zip([str(x).upper() for x in labels], row.get('stats',[])))
             raw_min = stats.get('MIN', stats.get('MINUTES'))
             mp = minutes(raw_min)
-            dnp = bool(row.get('didNotPlay'))
-            # A numeric zero can represent rounded sub-minute participation.
-            played = not dnp and mp is not None
+            dnp = row.get('didNotPlay')
+            # Missing or contradictory evidence does not establish absence.
+            played = False if dnp is True and mp is None else True if dnp is not True and mp is not None else None
             reason = str(row.get('reason') or '')
-            classification = classify_dnp(reason) if not played else dict(dnp_category=None,health_dnp=False,classification_note=None)
+            classification = classify_dnp(reason) if played is False else dict(dnp_category=None,health_dnp=False,classification_note=None)
             injury = classification['dnp_category'] == 'injury'
             pid = str(athlete.get('id') or athlete.get('displayName','Unknown'))
             players[pid] = dict(
@@ -164,7 +174,8 @@ def parse_players(summary, team_id):
                 name=athlete.get('displayName','Unknown'),
                 position=athlete.get('position',{}).get('abbreviation','—'),
                 minutes=mp if played else None,
-                played=played,reason=reason,
+                played=played,reason=reason,reported_minutes=raw_min,source_did_not_play=dnp,
+                participation_status='played' if played is True else 'absent' if played is False else 'unknown',
                 injury_dnp=injury,
                 **classification,
                 starter=bool(row.get('starter')),
@@ -173,6 +184,7 @@ def parse_players(summary, team_id):
 
          
     if not players: raise ValueError('No player rows returned')
+    if not any(p['played'] is True for p in players.values()):raise ValueError('No confirmed player participation available')
     return list(players.values())
 
 def collect(team, season, season_type=2, limit=10, progress=None, refresh=False):
@@ -203,6 +215,9 @@ def collect(team, season, season_type=2, limit=10, progress=None, refresh=False)
         if progress: progress(n-1,len(events))
         try:
             summary=fetch('/summary',{'event':event['id']},refresh)
+            header=summary.get('header',{})
+            if header.get('id') is not None and str(header['id'])!=str(event['id']):raise ValueError('Box-score source returned a different game')
+            if header.get('season',{}).get('year') is not None and str(header['season']['year'])!=str(season):raise ValueError('Box-score source returned a different season')
             comp=event['competitions'][0]
             sides=comp.get('competitors',[])
             own=next((x for x in sides if str(x.get('team',{}).get('id'))==tid),None)
@@ -215,12 +230,24 @@ def collect(team, season, season_type=2, limit=10, progress=None, refresh=False)
             period=summary.get('header',{}).get('competitions',[{}])[0].get('status',{}).get('period') or comp.get('status',{}).get('period')
             ot=max(0,int(period)-4) if period else None
             score=lambda side: str(side.get('score',{}).get('displayValue','')) if isinstance(side.get('score'),dict) else str(side.get('score',''))
-            games.append(dict(id=event['id'],**game_dates(summary,event),opponent=opponent['team'].get('abbreviation',''),opponent_name=opponent['team'].get('displayName',''),home_away=own.get('homeAway'),result='W' if own.get('winner') is True else 'L' if own.get('winner') is False else '—',score=f'{score(own)} – {score(opponent)}',rostered=len(players),entered=len(played),dnp=len(players)-len(played),**dnp_counts(players),minutes=round(sum(min_values),2) if played else None,overtime=ot,in_game_injuries=None,players=players,source=f'https://www.espn.com/wnba/boxscore/_/gameId/{event["id"]}'))
+            game=dict(id=event['id'],box_score_status='available',**game_dates(summary,event),opponent=opponent['team'].get('abbreviation',''),opponent_name=opponent['team'].get('displayName',''),home_away=own.get('homeAway'),result='W' if own.get('winner') is True else 'L' if own.get('winner') is False else '—',score=f'{score(own)} – {score(opponent)}',rostered=len(players),entered=len(played),dnp=sum(p['played'] is False for p in players),participation_unknown=sum(p['played'] is None for p in players),**dnp_counts(players),minutes=round(sum(min_values),2) if played else None,overtime=ot,in_game_injuries=None,players=players,source=f'https://www.espn.com/wnba/boxscore/_/gameId/{event["id"]}')
+            from wnba_official_reports import enrich_game
+            games.append(enrich_game(game,summary,event,team_info))
         except (requests.RequestException, ValueError, KeyError, IndexError, StopIteration) as error:
             errors.append(dict(game_id=event['id'],message=str(error)))
+            # An unavailable box score must not discard independently available
+            # official injury evidence for a completed scheduled game.
+            comp=event['competitions'][0]
+            sides=comp.get('competitors',[])
+            own=next((x for x in sides if str(x.get('team',{}).get('id'))==tid),{})
+            opponent=next((x for x in sides if str(x.get('team',{}).get('id'))!=tid),{})
+            if own and opponent:
+                game=dict(id=event['id'],**game_dates({},event),opponent=opponent['team'].get('abbreviation',''),opponent_name=opponent['team'].get('displayName',''),home_away=own.get('homeAway'),result='—',score='Unavailable',rostered=None,entered=None,dnp=None,participation_unknown=None,injury_dnp=None,illness_dnp=None,other_dnp=None,unknown_dnp=None,health_unspecified_dnp=None,minutes=None,overtime=None,in_game_injuries=None,players=[],box_score_status='unavailable',box_score_note=str(error),source=f'https://www.espn.com/wnba/boxscore/_/gameId/{event["id"]}')
+                from wnba_official_reports import enrich_game
+                games.append(enrich_game(game,{},event,team_info))
         time.sleep(.15)
     if progress: progress(len(events),len(events))
-    return dict(team=team_info,season=season,season_type=season_type,games=games,completed_games=total,requested_games=len(events),errors=errors,fetched_at=time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),source='ESPN WNBA',schema_version=2,notes=['Rostered means players listed in each game box score; dressed availability is not verified.','DNP reasons are categorized as injury, illness, other or unknown. Mixed injury/illness and unspecified health reasons remain unknown. These are not diagnoses or in-game injury events.','Dates use venue-local time; unknown venue timezones use explicitly labeled UTC.','200 player-minutes in regulation; 25 per overtime. Rounded source minutes may vary.'])
+    return dict(team=team_info,season=season,season_type=season_type,games=games,completed_games=total,requested_games=len(events),errors=errors,fetched_at=time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),boxscore_loaded_games=sum(g['box_score_status']=='available' for g in games),source='ESPN WNBA + official WNBA report snapshots' if any(g['official_report']['status']=='available' for g in games) else 'ESPN WNBA (official report coverage unavailable)',schema_version=3,notes=['Rostered means players listed in each game box score; dressed availability is not verified.','Official pregame snapshots are separate from actual participation; missing coverage is unavailable, not zero. Pre-2026 official archive coverage is not verified.', 'DNP reasons are categorized as injury, illness, other or unknown. Mixed injury/illness and unspecified health reasons remain unknown. These are not diagnoses or in-game injury events.','Dates use venue-local time; unknown venue timezones use explicitly labeled UTC.','200 player-minutes in regulation; 25 per overtime. Rounded source minutes may vary.'])
 
 if __name__=='__main__':
     import argparse

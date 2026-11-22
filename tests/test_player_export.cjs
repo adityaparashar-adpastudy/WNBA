@@ -1,0 +1,17 @@
+const assert=require('node:assert/strict');const e=require('../static/player_export.js');let n=0;
+const game={id:'1',date:'2026-06-10',date_timezone:'America/Toronto',opponent:'TOR',source:'espn',players:[{id:'1',name:'Brittney Griner',played:true,participation_status:'played',reported_minutes:'20',source_did_not_play:false},{id:'2',name:'Unknown',played:null,participation_status:'unknown',reported_minutes:'--',reason:'INACTIVE'},{id:'3',name:'Absent',played:false,participation_status:'absent',reported_minutes:null,dnp_category:'unknown',reason:''}],official_report:{status:'available',records:[{player_full_name:'Brittney Griner',player_id:'1',category:'injury',reported_status:'Questionable',reported_reason:'Injury/Illness - Left Rib; Strain',actual_participation:'played',reported_minutes:'20',report_at:'2026-06-10T17:00:00-04:00',source_url:'official',join_method:'exact_normalized_name'},{player_full_name:'Missing Player',category:'injury',reported_status:'Out',reported_reason:'Left Knee',actual_participation:'not_listed_in_box_score',reported_minutes:null,join_method:'unmatched'},{player_full_name:'Other',category:'other',reported_status:'Out',reported_reason:"Coach's Decision",actual_participation:'not_listed_in_box_score'}]}};
+const data={team:{displayName:'Connecticut Sun',abbreviation:'CONN'},season:2026,season_type:2,exported_at_utc:'2026-11-22T00:00Z'};
+let injury=e.rows(data,[game],'injury');assert.equal(injury.length,2);n++;
+assert.equal(injury[0].participation_status,'played');assert.equal(injury[0].playing_time_minutes,20);assert.equal(injury[0].minutes_precision,'rounded_whole_minutes');n++;
+assert.equal(injury[1].playing_time_minutes,'');assert.equal(injury[1].identity_join_method,'unmatched');n++;
+assert.equal(e.rows(data,[game],'reports').length,3);n++;
+assert.equal(e.rows(data,[{...game,official_report:{status:'unavailable'}}],'injury').length,0);n++;
+let playing=e.rows(data,[game],'playing');assert.equal(playing.length,3);assert.equal(playing[1].playing_time_minutes,'');assert.equal(playing[2].playing_time_minutes,0);n++;
+let absent=e.rows(data,[game],'absences');assert.equal(absent.length,2);assert.equal(absent[0].record_type,'participation_unknown');n++;
+assert.equal(injury[0].team,'Connecticut Sun');assert.equal(injury[0].competition,'regular');assert.equal(injury[0].report_at,'2026-06-10T17:00:00-04:00');n++;
+assert.equal(e.time('1:30',true).minutes,1.5);assert.equal(e.time('1:99',true).precision,'unavailable');assert.equal(e.time('-3',true).precision,'unavailable');n++;
+assert.equal(e.time('0',true).precision,'rounded_whole_minutes');assert.equal(e.time(null,false).minutes,0);n++;
+let csv=e.csv([{player_full_name:'José "Example", Jr.',reported_reason:'Reason\nNext line'}]);assert.ok(csv.startsWith('\ufeff'));assert.ok(csv.includes('José ""Example"", Jr.'));assert.ok(csv.includes('Reason\nNext line'));n++;
+assert.ok(e.csv([{player_full_name:'=1+1',reported_reason:'@SUM(1)'}]).includes('"\'=1+1"'));assert.ok(e.columns.includes('coverage_note'));n++;
+let reportOnly={...game,box_score_status:'unavailable',players:[],official_report:{status:'available',records:game.official_report.records.map(p=>({...p,actual_participation:'not_listed_in_box_score',reported_minutes:null}))}};assert.equal(e.rows(data,[reportOnly],'injury').length,2);assert.equal(e.rows(data,[reportOnly],'playing').length,0);assert.equal(e.rows(data,[reportOnly],'injury')[0].playing_time_minutes,'');n++;
+console.log(n+' CSV checks passed');

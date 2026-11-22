@@ -35,16 +35,21 @@ def snapshot():
 
 @app.post('/api/query')
 def query():
-    payload=request.get_json(silent=True) or {}
+    payload=request.get_json(silent=True)
+    if not isinstance(payload,dict):return jsonify(error='Send a JSON object.'),400
     try:
         team=str(payload.get('team','ind')).lower()
         if not team.isalnum() or len(team)>12: raise ValueError('Invalid team')
+        if any(not str(payload.get(key,default)).isdigit() for key,default in (('season',2025),('limit',10),('season_type',2))):raise ValueError('Choose numeric season, game limit and competition values')
         season=int(payload.get('season',2025));limit=int(payload.get('limit',10));kind=int(payload.get('season_type',2))
         if not 1997<=season<=season_options()['max_season'] or limit not in (5,10,20,0) or kind not in (2,3): raise ValueError('Invalid season, game limit, or season type')
     except (ValueError,TypeError) as e: return jsonify(error=str(e)),400
     with lock:
         for old in [k for k,v in jobs.items() if time.time()-v['created']>3600 and v['status']!='running']: jobs.pop(old)
         if sum(x['status']=='running' for x in jobs.values())>=2: return jsonify(error='Two queries are running. Please wait for one to finish.'),429
+        if len(jobs)>=64:
+            oldest=next((key for key,value in jobs.items() if value['status']!='running'),None)
+            if oldest:jobs.pop(oldest)
         jid=secrets.token_hex(12);jobs[jid]=dict(status='running',done=0,total=0,created=time.time())
     def work():
         try:

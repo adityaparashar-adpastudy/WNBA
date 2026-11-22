@@ -1,0 +1,31 @@
+team,competition,games,boxscores,official_snapshots,injury_designations,illness_designations,other_designations,unknown_designations,participation_unknown
+Phoenix Mercury,regular,44,44,44,66,3,58,4,2
+Phoenix Mercury,playoffs,0,0,0,0,0,0,0,0
+Golden State Valkyries,regular,44,44,44,11,1,55,16,2
+Golden State Valkyries,playoffs,13,13,13,0,0,0,0,0
+Toronto Tempo,regular,44,44,44,131,3,26,3,0
+Toronto Tempo,playoffs,0,0,0,0,0,0,0,0
+Portland Fire,regular,44,44,44,91,4,32,1,3
+Portland Fire,playoffs,0,0,0,0,0,0,0,0
+Seattle Storm,regular,44,44,44,66,1,43,17,1
+Seattle Storm,playoffs,0,0,0,0,0,0,0,0
+Washington Mystics,regular,44,44,44,19,0,27,4,0
+Washington Mystics,playoffs,2,2,2,0,0,0,0,0
+Las Vegas Aces,regular,44,44,44,80,10,20,0,0
+Las Vegas Aces,playoffs,6,6,6,11,0,0,0,0
+Connecticut Sun,regular,44,44,44,85,3,38,5,0
+Connecticut Sun,playoffs,0,0,0,0,0,0,0,0
+Chicago Sky,regular,44,43,44,124,5,49,2,0
+Chicago Sky,playoffs,0,0,0,0,0,0,0,0
+Atlanta Dream,regular,44,44,44,59,2,46,0,0
+Atlanta Dream,playoffs,12,12,12,17,0,0,0,0
+Dallas Wings,regular,44,43,44,60,3,49,1,1
+Dallas Wings,playoffs,3,3,3,4,0,0,0,0
+Indiana Fever,regular,44,44,44,31,2,60,37,0
+Indiana Fever,playoffs,3,3,3,9,0,0,0,0
+Los Angeles Sparks,regular,44,44,44,50,1,49,15,0
+Los Angeles Sparks,playoffs,0,0,0,0,0,0,0,0
+Minnesota Lynx,regular,44,43,44,92,0,55,0,0
+Minnesota Lynx,playoffs,2,2,2,2,0,0,0,0
+New York Liberty,regular,44,43,44,77,2,42,5,0
+New York Liberty,playoffs,5,5,5,1,1,0,0,0

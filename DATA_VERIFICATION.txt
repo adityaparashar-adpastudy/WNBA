@@ -1,0 +1,42 @@
+WNBA injury evidence verification — November 22, 2026
+
+2025 retained-source replay:
+- All 30 team/competition queries: 310 unique games, 620 team-game rows,
+  7,093 player-game rows. Scores, source minutes and game coverage preserved.
+- 21 previous nonparticipation records corrected to participation unknown:
+  source minutes were missing and the source did-not-play flag was false.
+- Official pre-2026 PDF archive coverage remains unverified, not zero injuries.
+
+2026 live regular-season and playoff queries:
+- All 15 teams checked across 30 team/competition queries.
+- 706 scheduled completed team-game records retained.
+- Matching submitted official pregame snapshots retrieved for all 706 rows.
+- 702 team box scores reconciled with retained ESPN source responses:
+  game ID/year, parsed player rows and source participation/minutes checked.
+- 8,526 player-game rows retained. Missing/contradictory participation remains unknown.
+- ESPN summary 401856947 (Chicago/Minnesota, May 29) and 401856934
+  (Dallas/New York, May 24) returned 404. Those four team-game rows keep their
+  official report records and null player metrics. A report status does not
+  establish participation or absence. Playing time is unavailable for those games.
+
+Corrections include Connecticut CON/CONN normalization, separate official and
+box-score evidence, source player names/reasons/status/timestamps, PDF header
+alignment, wrapped reasons and repeated umbrella headings, foreign unsubmitted
+summer-league rows, conservative reason categories, malformed minute handling,
+wrong-source game/season rejection, and missing box-score preservation.
+
+45 Python regression tests and 13 CSV checks passed. Browser checks cover
+historical missing-report display, Connecticut matching, Chicago's missing
+box score with retained official designations, and player-detail/export flows.
+
+Interpretation limits:
+These checks validate extraction, joins and aggregation against selected public
+source responses. They do not independently medically adjudicate every fact.
+Snapshots are not necessarily the final pre-tipoff revision, a complete archive
+of all public injuries, or unique injury episodes. Injured players may still play.
+Raw ESPN minutes are usually rounded and are not verified exact-second exposure.
+Source access, corrections and report layouts can change after this check.
+No zero-error, complete-registry or clinical-validation certification is made.
+
+Official report information: https://www.wnba.com/wnba-injury-report
+ESPN source: https://site.api.espn.com/apis/site/v2/sports/basketball/wnba

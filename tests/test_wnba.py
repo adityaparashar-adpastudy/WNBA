@@ -43,7 +43,9 @@ class MetricsTests(unittest.TestCase):
         fetch.side_effect=[{'team':{'id':'5'},'events':[event('1'),event('2','commissioners-cup'),event('3')]},self.fixture(),ValueError('missing game')]
         result=collect('5',2025,limit=0)
         self.assertEqual(result['completed_games'],2)
-        self.assertEqual(len(result['games']),1)
+        self.assertEqual(len(result['games']),2)
+        self.assertEqual(result['games'][1]['box_score_status'],'unavailable')
+        self.assertIsNone(result['games'][1]['entered'])
         self.assertEqual(len(result['errors']),1)
         self.assertEqual(result['games'][0]['overtime'],1)
     def test_snapshot_consistency(self):
