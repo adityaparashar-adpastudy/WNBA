@@ -55,3 +55,25 @@ class ReportFollowupTests(unittest.TestCase):
             with self.assertRaises(requests.HTTPError):fetch('/summary',{'event':'missing'},True)
             self.assertEqual(list(Path(tmp).glob('*.json')),[])
             result=fetch('/summary',{'event':'missing'},True);self.assertTrue(result['boxscore']['players']);self.assertEqual(get.call_count,2)
+
+class SuppliedAuditTests(unittest.TestCase):
+    def test_new_explicit_source_reason_families(self):
+        expected={'BONE BRUISE':'injury','SORE KNEES':'injury','MOUTH':'injury',"CROHN'S DISEASE":'illness','KIDNEY STONE':'illness','VERTIGO':'illness','MIGRAINE':'illness','SICK':'illness','DEHYDRATION':'illness','FAMILY REASONS':'other','FAMILY MATTERS':'other','PERSONAL BUSINESS':'other','NOT WITH TEAM - MATERNITY LEAVE':'other'}
+        for reason, category in expected.items():
+            with self.subTest(reason=reason): self.assertEqual(classify_dnp(reason)['dnp_category'],category)
+    def test_surgery_rehab_protocols_do_not_imply_traumatic_injury(self):
+        for reason in ['CYST SURGERY','DENTAL SURGERY','REHAB','SURGERY REHAB','MEDICAL EXEMPTION','MEDICAL PROTOCOL','RETURN TO PLAY PROTOCOL']:
+            with self.subTest(reason=reason):
+                actual=classify_dnp(reason)
+                self.assertEqual(actual['dnp_category'],'unknown');self.assertTrue(actual['health_dnp'])
+        self.assertEqual(classify_dnp('LEFT KNEE INJURY MANAGEMENT')['dnp_category'],'injury')
+    def test_severely_incomplete_team_minutes_are_flagged_without_changing_rows(self):
+        from collector import boxscore_quality
+        players=[dict(minutes=6,played=True),dict(minutes=7,played=True)]+[dict(minutes=None,played=False) for _ in range(9)]
+        before=copy.deepcopy(players);quality=boxscore_quality(players,0)
+        self.assertTrue(quality['exclude_from_averages']);self.assertIn('13 reported',quality['box_score_quality_note']);self.assertEqual(players,before)
+    def test_rounded_regulation_overtime_and_false_starter(self):
+        from collector import boxscore_quality
+        for total,ot in [(197,0),(203,0),(224,1)]:
+            self.assertFalse(boxscore_quality([dict(minutes=total,played=True)],ot)['exclude_from_averages'])
+        self.assertTrue(boxscore_quality([dict(minutes=200,played=True),dict(minutes=None,played=False,starter=True)],0)['exclude_from_averages'])

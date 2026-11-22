@@ -113,13 +113,13 @@ def game_dates(summary, event):
 # ambiguous health reports unknown rather than guessing injury versus illness.
 # A body-site or musculoskeletal term is a source-text category, not a diagnosis.
 # Do not match a generic -itis suffix as injury (e.g. bronchitis or myocarditis).
-ANATOMY_TERMS = r"arm|thigh|a[bd]ductor\w*|pinky|dislocat\w*|head|face|facial|heel|shin|pelvi\w*|tibia\w*|fibula\w*|ligament\w*|tendon\w*|tendinitis|tenosynovitis|bursitis|fasciitis|synovitis|epicondylitis|costochondritis|bicep\w*|tricep\w*|metatarsal\w*|patella\w*|oblique\w*|glute\w*|menisc\w*|ankle|back|knee|acl|mcl|pcl|lcl|concussion|hamstring\w*|shoulder|wrist|hand|finger|thumb|nose|eye|toe|foot|achilles|calf|groin|hip|quad\w*|elbow|rib\w*|leg|neck|abdomen|abdominal|chest|spine|spinal|vertebr\w*|lumbar|thoracic|cervical|sacral|sacroiliac|coccyx|disc|disk|soleus|gastrocnemius|psoas|iliopsoas|latissimus|trapezius|deltoid\w*|pectoral\w*|rectus\s+femoris|tibialis|peroneal\w*|serratus|teres|supraspinatus|infraspinatus|subscapularis|rotator\s+cuff|upper\s+body|lower\s+body|sprain\w*|strain\w*|fractur\w*|contusion|laceration|soreness"
+ANATOMY_TERMS = r"bone|bruis\w*|mouth|knees|arm|thigh|a[bd]ductor\w*|pinky|dislocat\w*|head|face|facial|heel|shin|pelvi\w*|tibia\w*|fibula\w*|ligament\w*|tendon\w*|tendinitis|tenosynovitis|bursitis|fasciitis|synovitis|epicondylitis|costochondritis|bicep\w*|tricep\w*|metatarsal\w*|patella\w*|oblique\w*|glute\w*|menisc\w*|ankle|back|knee|acl|mcl|pcl|lcl|concussion|hamstring\w*|shoulder|wrist|hand|finger|thumb|nose|eye|toe|foot|achilles|calf|groin|hip|quad\w*|elbow|rib\w*|leg|neck|abdomen|abdominal|chest|spine|spinal|vertebr\w*|lumbar|thoracic|cervical|sacral|sacroiliac|coccyx|disc|disk|soleus|gastrocnemius|psoas|iliopsoas|latissimus|trapezius|deltoid\w*|pectoral\w*|rectus\s+femoris|tibialis|peroneal\w*|serratus|teres|supraspinatus|infraspinatus|subscapularis|rotator\s+cuff|upper\s+body|lower\s+body|sprain\w*|strain\w*|fractur\w*|contusion|laceration|soreness"
 ANATOMY_REASON = re.compile(r"\b(?:"+ANATOMY_TERMS+r")\b",re.I)
 INJURY_REASON = re.compile(r"\b(?:injur\w*|"+ANATOMY_TERMS+r")\b",re.I)
-HEALTH_UNSPECIFIED = re.compile(r"\b(?:HEALTH\s*(?:&|AND)\s*SAFETY(?:\s+PROTOCOLS?)?|COLLAPSED LUNG|RECONDITIONING|CYST|[A-Z]+ITIS)\b",re.I)
+HEALTH_UNSPECIFIED = re.compile(r"\b(?:HEALTH\s*(?:&|AND)\s*SAFETY(?:\s+PROTOCOLS?)?|COLLAPSED LUNG|RECONDITIONING|CYST|SURGERY|REHAB(?:ILITATION)?|MEDICAL (?:EXEMPTION|PROTOCOL)|RETURN TO PLAY PROTOCOL|[A-Z]+ITIS)\b",re.I)
 OTHER_REASONS = {"COACH'S DECISION", 'NOT WITH TEAM', 'PERSONAL', 'PERSONAL REASONS',
                  'REST', 'LEAGUE SUSPENSION', 'SUSPENDED BY LEAGUE', 'PLAYER SUSPENDED', 'SUSPENSION',
-                 'OVERSEAS',
+                 'OVERSEAS', 'FAMILY REASONS', 'FAMILY MATTERS', 'PERSONAL BUSINESS', 'MATERNITY LEAVE', 'NOT WITH TEAM - MATERNITY LEAVE',
                  'NOT WITH TEAM - PREGNANCY', 'NOT INJURY RELATED', 'NON-INJURY RELATED'}
 
 def classify_dnp(reason):
@@ -138,7 +138,7 @@ def classify_dnp(reason):
     if known_nonmedical or generic_management or normalized in OTHER_REASONS or re.search(r'\b(?:NOT|NON)[ -]INJURY[ -]RELATED\b',normalized):
         return dict(dnp_category='other',health_dnp=False,classification_note='Reported non-injury reason or participation status')
     injury = bool(INJURY_REASON.search(normalized))
-    illness = bool(re.search(r'\b(?:ILLNESS|ILL|SICKNESS|FLU|COVID(?:-19)?)\b',normalized))
+    illness = bool(re.search(r'\b(?:ILLNESS|ILL|SICK|SICKNESS|CROHN(?:\'S)? DISEASE|KIDNEY STONES?|VERTIGO|MIGRAINE|DEHYDRATION|FLU|COVID(?:-19)?)\b',normalized))
     if (injury and illness) or normalized in {'COLLAPSED LUNG','RETURN TO COMPETITION RECONDITIONING'}:
         return dict(dnp_category='unknown',health_dnp=True,classification_note='Health-related source reason; injury versus illness is unspecified')
     if HEALTH_UNSPECIFIED.search(normalized) and not injury and not illness:
@@ -148,6 +148,19 @@ def classify_dnp(reason):
     if injury:
         return dict(dnp_category='injury',health_dnp=True,classification_note='Injury or body-site reason reported in the source')
     return dict(dnp_category='unknown',health_dnp=medical_umbrella,classification_note='Health-related source wording; cause unspecified' if medical_umbrella else 'Unrecognized source reason; review required')
+
+def boxscore_quality(players, overtime):
+    """Flag source contradictions without changing the source's player rows."""
+    total = sum(p['minutes'] or 0 for p in players if p.get('played') is True)
+    expected = 200 + 25 * (overtime or 0)
+    notes = []
+    # Completed games may have rounded minutes. A large shortfall is a review
+    # flag, not permission to manufacture participation or absence reasons.
+    if total < expected - 30:
+        notes.append(f'Only {total:g} reported team minutes; expected approximately {expected}.')
+    if any(p.get('starter') and p.get('played') is False for p in players):
+        notes.append('Source lists a starter as not playing.')
+    return dict(exclude_from_averages=bool(notes), box_score_quality='review_required' if notes else 'no_automated_flag', box_score_quality_note=' '.join(notes))
 
 def dnp_counts(players):
     counts = {category:0 for category in ('injury','illness','other','unknown')}
@@ -243,6 +256,7 @@ def collect(team, season, season_type=2, limit=10, progress=None, refresh=False)
             score=lambda side: str(side.get('score',{}).get('displayValue','')) if isinstance(side.get('score'),dict) else str(side.get('score',''))
             source_team=next((b.get('team',{}) for b in summary.get('boxscore',{}).get('players',[]) if str(b.get('team',{}).get('id'))==tid),{})
             game=dict(id=event['id'],team_name=source_team.get('displayName'),team_code=source_team.get('abbreviation'),box_score_status='available',**game_dates(summary,event),opponent=opponent['team'].get('abbreviation',''),opponent_name=opponent['team'].get('displayName',''),home_away=own.get('homeAway'),result='W' if own.get('winner') is True else 'L' if own.get('winner') is False else '—',score=f'{score(own)} – {score(opponent)}',rostered=len(players),entered=len(played),dnp=sum(p['played'] is False for p in players),participation_unknown=sum(p['played'] is None for p in players),**dnp_counts(players),minutes=round(sum(min_values),2) if played else None,overtime=ot,in_game_injuries=None,players=players,source=f'https://www.espn.com/wnba/boxscore/_/gameId/{event["id"]}')
+            game.update(boxscore_quality(players,ot))
             from wnba_official_reports import enrich_game
             games.append(enrich_game(game,summary,event,team_info))
         except (requests.RequestException, ValueError, KeyError, IndexError, StopIteration) as error:

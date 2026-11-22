@@ -1,0 +1,14 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+const source=fs.readFileSync(require('path').join(__dirname,'../static/app.js'),'utf8');
+const line=source.split('\n').find(line=>line.startsWith('const avg='));
+const avg=vm.runInNewContext(line+'\navg;');
+assert.equal(avg([{minutes:200},{minutes:13,exclude_from_averages:true}],'minutes'),'200.0');
+assert.equal(avg([{minutes:13,exclude_from_averages:true},{minutes:null}],'minutes'),'—');
+assert.equal(avg([{entered:10},{entered:2,exclude_from_averages:true}],'entered'),'10.0');
+const exp=require('../static/player_export.js');
+const game={id:'example',players:[{name:'Source Player',played:true,reported_minutes:'6'}],exclude_from_averages:true,box_score_quality:'review_required',box_score_quality_note:'Only 13 reported team minutes.'};
+const rows=exp.rows({season:2016,team:{displayName:'Test Team'}},[game],'playing');
+assert.equal(rows[0].box_score_quality,'review_required');
+assert.equal(rows[0].exclude_from_averages,true);
+assert(exp.csv(rows).includes('Only 13 reported team minutes.'));
+console.log('Quality exclusions and CSV provenance checks passed');
