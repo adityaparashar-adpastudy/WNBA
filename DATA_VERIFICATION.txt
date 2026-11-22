@@ -53,3 +53,12 @@ ESPN source: https://site.api.espn.com/apis/site/v2/sports/basketball/wnba
 Final selector criterion: usable player data plus an identifiable injury reason in the availability sample. 2003–2012 have some player data but no identifiable injury reasons in these samples, so they are also hidden pending injury verification. Visible seasons: 2013–2026. Sampling does not prove the hidden years have no public injury information, nor that visible years are complete.
 
 Doctor-facing clarity update (2026-11-22): Source1 always means ESPN recorded absences; Source2 always means official pregame PDF listings. They are never combined. Missing PDFs show a plain-language message without numeric injury totals. Zero, missing data and unclear reason are defined. Table headings, CSV controls and filenames name the source; duplicate injury summaries removed. Data collection/classification unchanged. Separate-source display checks cover absent sources, genuine zero and mixed ESPN/PDF coverage. Browser checked 2025 without PDFs and retained2026 Phoenix5-game evidence (ESPN4 injury absences vs PDF5 injury listings).
+
+Follow-up source checks 22 November2026
+- Supplied /tmp/claude-0/.../classification_fixes.csv is not present on this Mac. Its exact25 rows and quoted2021–2026 totals could not be independently replayed.
+- Retained replay:998 team-game records,11789 player rows. Six absence rows gain injury categorization (lumbar spine1, right abductor muscle4, plantar fasciitis1); one cyst-surgery row gains the health-related-unknown flag. This is not an exhaustive2021–2026 audit.
+- Retained1886 unique2026 official player-game rows:64 source-name spacing corrections;895 unmatched rows,15 with unavailable box scores,0 additional exact canonical-name matches. One plausible longer-name candidate remains unverified; no fuzzy identity assignments were made.
+- Direct ESPN probes:401856934=404,401856947=404,401856954=200 with two team player blocks.
+- Direct official PDF check July2 19:45 ET includes DAL@CON for July2 20:00 ET. Hartford mapping corrected UTC fallback to local game dateJuly2.
+- Direct July28 07:00 ET PDF lists Taina Mair Out for Coach's Decision; ESPN401857094 records2 minutes played. Both observations retained and review-flagged. This is an Other-reason listing, not an injury absence.
+- Missing HTTP responses are not cached; Refresh source retries. Tests verify this and ensure ambiguous health reasons stay within Unknown, not additional injury counts.

@@ -61,6 +61,7 @@ def minutes(value):
 VENUE_TIMEZONES = {
     ('chicago','IL'): 'America/Chicago',
     ('seattle','WA'): 'America/Los_Angeles',
+    ('hartford','CT'): 'America/New_York',
     ('brooklyn','NY'): 'America/New_York',
     ('new york','NY'): 'America/New_York',
     ('college park','GA'): 'America/New_York',
@@ -110,7 +111,12 @@ def game_dates(summary, event):
 
 # These are source-text categories, not diagnoses or incident counts. Keep
 # ambiguous health reports unknown rather than guessing injury versus illness.
-INJURY_REASON = re.compile(r"\b(?:injur\w*|arm|thigh|adductor|pinky|dislocat\w*|head|face|facial|heel|shin|pelvi\w*|tibia\w*|fibula\w*|tendon\w*|bicep\w*|tricep\w*|metatarsal\w*|patella\w*|oblique\w*|glute\w*|menisc\w*|ankle|back|knee|acl|mcl|pcl|lcl|concussion|hamstring|shoulder|wrist|hand|finger|thumb|nose|eye|toe|foot|achilles|calf|groin|hip|quad\w*|elbow|rib\w*|leg|neck|abdomen|abdominal|chest|sprain\w*|strain\w*|fractur\w*|contusion|laceration|soreness)\b", re.I)
+# A body-site or musculoskeletal term is a source-text category, not a diagnosis.
+# Do not match a generic -itis suffix as injury (e.g. bronchitis or myocarditis).
+ANATOMY_TERMS = r"arm|thigh|a[bd]ductor\w*|pinky|dislocat\w*|head|face|facial|heel|shin|pelvi\w*|tibia\w*|fibula\w*|ligament\w*|tendon\w*|tendinitis|tenosynovitis|bursitis|fasciitis|synovitis|epicondylitis|costochondritis|bicep\w*|tricep\w*|metatarsal\w*|patella\w*|oblique\w*|glute\w*|menisc\w*|ankle|back|knee|acl|mcl|pcl|lcl|concussion|hamstring\w*|shoulder|wrist|hand|finger|thumb|nose|eye|toe|foot|achilles|calf|groin|hip|quad\w*|elbow|rib\w*|leg|neck|abdomen|abdominal|chest|spine|spinal|vertebr\w*|lumbar|thoracic|cervical|sacral|sacroiliac|coccyx|disc|disk|soleus|gastrocnemius|psoas|iliopsoas|latissimus|trapezius|deltoid\w*|pectoral\w*|rectus\s+femoris|tibialis|peroneal\w*|serratus|teres|supraspinatus|infraspinatus|subscapularis|rotator\s+cuff|upper\s+body|lower\s+body|sprain\w*|strain\w*|fractur\w*|contusion|laceration|soreness"
+ANATOMY_REASON = re.compile(r"\b(?:"+ANATOMY_TERMS+r")\b",re.I)
+INJURY_REASON = re.compile(r"\b(?:injur\w*|"+ANATOMY_TERMS+r")\b",re.I)
+HEALTH_UNSPECIFIED = re.compile(r"\b(?:HEALTH\s*(?:&|AND)\s*SAFETY(?:\s+PROTOCOLS?)?|COLLAPSED LUNG|RECONDITIONING|CYST|[A-Z]+ITIS)\b",re.I)
 OTHER_REASONS = {"COACH'S DECISION", 'NOT WITH TEAM', 'PERSONAL', 'PERSONAL REASONS',
                  'REST', 'LEAGUE SUSPENSION', 'SUSPENDED BY LEAGUE', 'PLAYER SUSPENDED', 'SUSPENSION',
                  'OVERSEAS',
@@ -118,26 +124,30 @@ OTHER_REASONS = {"COACH'S DECISION", 'NOT WITH TEAM', 'PERSONAL', 'PERSONAL REAS
 
 def classify_dnp(reason):
     normalized = re.sub(r'\s+',' ',str(reason or '').upper().replace('’',"'")).strip()
+    medical_umbrella=bool(re.search(r'INJURY\s*/\s*ILLNESS',normalized))
     normalized = re.sub(r'^DNP\s*[-:]\s*','',normalized)
     normalized = re.sub(r'^INJURY\s*/\s*ILLNESS\s*[-:]\s*(?=\S)','',normalized)
     detail_without_umbrella=re.sub(r'INJURY\s*/\s*ILLNESS','',normalized)
     if re.search(r'[A-Z]',detail_without_umbrella):normalized=detail_without_umbrella.strip(' -:;')
     if not normalized:
-        return dict(dnp_category='unknown',health_dnp=False,classification_note='No source reason reported')
+        return dict(dnp_category='unknown',health_dnp=medical_umbrella,classification_note='Medical report section without a specific cause' if medical_umbrella else 'No source reason reported')
     if normalized in {'DID NOT PLAY','DID NOT DRESS','INACTIVE','DNP'}:
-        return dict(dnp_category='unknown',health_dnp=False,classification_note='Participation status does not establish an absence reason')
-    known_nonmedical=bool(re.match(r"^(?:COACH(?:\s*'\s*S|ES)?\s+DECISION|PERSONAL(?: REASONS)?|(?:N/?A[;:\s]+)?REST)(?:\s*[-;:]|$)",normalized))
-    if known_nonmedical or normalized in OTHER_REASONS or re.search(r'\b(?:NOT|NON)[ -]INJURY[ -]RELATED\b',normalized):
+        return dict(dnp_category='unknown',health_dnp=medical_umbrella,classification_note='Participation status does not establish a specific cause')
+    known_nonmedical=bool(re.match(r"^(?:COACH(?:\s*'\s*S|ES)?\s+DECISION|PERSONAL(?: REASONS)?)(?:\s*[-;:]|$)",normalized))
+    generic_management=bool(re.search(r'\b(?:REST|LOAD MANAGEMENT|INJURY MANAGEMENT)\b',normalized)) and not ANATOMY_REASON.search(normalized) and not re.search(r'\b(?:ILLNESS|COVID|FLU)\b',normalized)
+    if known_nonmedical or generic_management or normalized in OTHER_REASONS or re.search(r'\b(?:NOT|NON)[ -]INJURY[ -]RELATED\b',normalized):
         return dict(dnp_category='other',health_dnp=False,classification_note='Reported non-injury reason or participation status')
     injury = bool(INJURY_REASON.search(normalized))
     illness = bool(re.search(r'\b(?:ILLNESS|ILL|SICKNESS|FLU|COVID(?:-19)?)\b',normalized))
     if (injury and illness) or normalized in {'COLLAPSED LUNG','RETURN TO COMPETITION RECONDITIONING'}:
         return dict(dnp_category='unknown',health_dnp=True,classification_note='Health-related source reason; injury versus illness is unspecified')
+    if HEALTH_UNSPECIFIED.search(normalized) and not injury and not illness:
+        return dict(dnp_category='unknown',health_dnp=True,classification_note='Health-related source wording; injury versus illness is unspecified')
     if illness:
         return dict(dnp_category='illness',health_dnp=True,classification_note='Illness reported in the source')
     if injury:
         return dict(dnp_category='injury',health_dnp=True,classification_note='Injury or body-site reason reported in the source')
-    return dict(dnp_category='unknown',health_dnp=False,classification_note='Unrecognized source reason; review required')
+    return dict(dnp_category='unknown',health_dnp=medical_umbrella,classification_note='Health-related source wording; cause unspecified' if medical_umbrella else 'Unrecognized source reason; review required')
 
 def dnp_counts(players):
     counts = {category:0 for category in ('injury','illness','other','unknown')}
@@ -172,6 +182,7 @@ def parse_players(summary, team_id):
             players[pid] = dict(
                 id=pid,
                 name=athlete.get('displayName','Unknown'),
+                source_names=list(dict.fromkeys(n for n in [athlete.get('displayName'),athlete.get('fullName'),(' '.join([athlete['firstName'],athlete['lastName']]) if athlete.get('firstName') and athlete.get('lastName') else None)] if n)),
                 position=athlete.get('position',{}).get('abbreviation','—'),
                 minutes=mp if played else None,
                 played=played,reason=reason,reported_minutes=raw_min,source_did_not_play=dnp,
@@ -249,7 +260,7 @@ def collect(team, season, season_type=2, limit=10, progress=None, refresh=False)
         time.sleep(.15)
     if progress: progress(len(events),len(events))
     from season_coverage import for_season
-    return dict(team=team_info,season=season,season_coverage=for_season(season),season_type=season_type,games=games,completed_games=total,requested_games=len(events),errors=errors,fetched_at=time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),boxscore_loaded_games=sum(g['box_score_status']=='available' for g in games),source='ESPN WNBA + official WNBA report snapshots' if any(g['official_report']['status']=='available' for g in games) else 'ESPN WNBA (official report coverage unavailable)',schema_version=3,notes=['Rostered means players listed in each game box score; dressed availability is not verified.','Official pregame snapshots are separate from actual participation; missing coverage is unavailable, not zero. Pre-2026 official archive coverage is not verified.', 'DNP reasons are categorized as injury, illness, other or unknown. Mixed injury/illness and unspecified health reasons remain unknown. These are not diagnoses or in-game injury events.','Dates use venue-local time; unknown venue timezones use explicitly labeled UTC.','200 player-minutes in regulation; 25 per overtime. Rounded source minutes may vary.'])
+    return dict(team=team_info,season=season,season_coverage=for_season(season),season_type=season_type,games=games,completed_games=total,requested_games=len(events),errors=errors,fetched_at=time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),missing_boxscore_games=sum(g['box_score_status']!='available' for g in games),boxscore_loaded_games=sum(g['box_score_status']=='available' for g in games),source='ESPN WNBA + official WNBA report snapshots' if any(g['official_report']['status']=='available' for g in games) else 'ESPN WNBA (official report coverage unavailable)',schema_version=3,notes=['Rostered means players listed in each game box score; dressed availability is not verified.','Official pregame snapshots are separate from actual participation; missing coverage is unavailable, not zero. Pre-2026 official archive coverage is not verified.', 'DNP reasons are categorized as injury, illness, other or unknown. Mixed injury/illness and unspecified health reasons remain unknown. These are not diagnoses or in-game injury events.','Dates use venue-local time; unknown venue timezones use explicitly labeled UTC.','200 player-minutes in regulation; 25 per overtime. Rounded source minutes may vary.'])
 
 if __name__=='__main__':
     import argparse

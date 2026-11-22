@@ -26,7 +26,7 @@ def record(source,team,player,status,detail,reported_at,source_url,player_id='',
         age=(datetime.now(timezone.utc)-published.astimezone(timezone.utc)).total_seconds()/86400
         stale=age>7
     except (ValueError,TypeError):stale=None
-    return dict(source=source,team=team,player=player,player_id=player_id,status=status,injury_detail=detail,injury_body_part=body_part,side='',date_reported=reported_at,started_at=started_at,season='',games_missed=None,return_date=None,source_url=source_url,confidence='reported',primary_verification='not_verified',category=classification['dnp_category'],stale=stale,offseason_or_overseas='not_verified',evidence_scope='latest_source_listing_not_game_evidence')
+    return dict(source=source,team=team,player=player,player_id=player_id,status=status,injury_detail=detail,injury_body_part=body_part,side='',date_reported=reported_at,started_at=started_at,season='',games_missed=None,return_date=None,source_url=source_url,confidence='reported',primary_verification='not_verified',health_related_cause_unknown=(classification['dnp_category']=='unknown' and classification['health_dnp']),category=classification['dnp_category'],stale=stale,offseason_or_overseas='not_verified',evidence_scope='latest_source_listing_not_game_evidence')
 
 def parse_espn(data):
     if data.get('status')!='success' or not isinstance(data.get('injuries'),list):raise ValueError('Unrecognized ESPN injury response')
@@ -37,7 +37,9 @@ def parse_espn(data):
             if not athlete.get('displayName'):continue
             body=detail.get('type') or ''
             row=record('ESPN',team.get('displayName',''),athlete['displayName'],item.get('status',''),item.get('shortComment') or body,item.get('date'),ESPN_PAGE,str(athlete.get('id','')),body_part=body if re.fullmatch(r'(?:ankle|back|knee|hamstring|shoulder|wrist|hand|finger|thumb|nose|eye|toe|foot|achilles|calf|groin|hip|quad|elbow|rib|leg|neck|abdomen|chest)',body,re.I) else '')
-            row['category']=classify_dnp(body or item.get('shortComment',''))['dnp_category']
+            classification=classify_dnp(body or item.get('shortComment',''))
+            row['category']=classification['dnp_category']
+            row['health_related_cause_unknown']=classification['dnp_category']=='unknown' and classification['health_dnp']
             row['source_reason']=body
             rows.append(row)
     return rows,data.get('timestamp')

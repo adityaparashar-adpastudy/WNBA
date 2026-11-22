@@ -19,6 +19,10 @@ STATUSES = {'Out','Questionable','Doubtful','Probable','Available'}
 def clean(text):
     return re.sub(r'\s+', ' ', text).strip().replace('Two- Way','Two-Way')
 
+def clean_name(text):
+    # Normalize PDF line-wrap spacing only in names, preserving raw source text separately.
+    return re.sub(r'(?<=\w)\s*[-\u2010-\u2014]\s*(?=\w)','-',clean(text))
+
 def name_key(name):
     text = unicodedata.normalize('NFKD', name or '')
     return re.sub(r'[^a-z0-9]', '', text.encode('ascii','ignore').decode().lower())
@@ -30,6 +34,7 @@ def report_category(reason):
     return classify_dnp(detail)['dnp_category']
 
 def parse_report(content, source_url):
+    from collector import classify_dnp
     reader = PdfReader(BytesIO(content))
     plain = reader.pages[0].extract_text()
     match = re.search(r'Injury\s+Report:\s*(\d{1,2}/\d{1,2}/\d{2,4})\s+(\d{1,2}:\d{2})\s*([AP]M)',plain,re.I)
@@ -109,10 +114,11 @@ def parse_report(content, source_url):
         reason=clean(' '.join(line['text'] for line in reason_lines if start<=line['position']<end))
         if ',' not in a['name']:raise ValueError('WNBA report player name is incomplete')
         last,first=a['name'].split(',',1)
-        full_name=re.sub(r'(?<=\w)-\s+(?=\w)','-',clean(first+' '+last))
-        records.append(dict(player_full_name=full_name,source_player_name=a['name'],team= current_team,
+        full_name=clean_name(first+' '+last)
+        classification=classify_dnp(reason)
+        records.append(dict(player_full_name=full_name,source_player_name=clean_name(a['name']),source_player_name_raw=a['name'],team=current_team,
                             team_code=TEAM_CODES[current_team],game_date=current_date,matchup=current_matchup,
-                            reported_status=a['status'],reported_reason=reason,category=report_category(reason),
+                            reported_status=a['status'],reported_reason=reason,category=classification['dnp_category'],health_related_cause_unknown=(classification['dnp_category']=='unknown' and classification['health_dnp']),
                             report_at=timestamp.isoformat(),source_url=source_url))
     return dict(report_at=timestamp.isoformat(),source_url=source_url,records=records,
                 not_submitted=not_submitted,matchups=sorted(matchups))
@@ -176,13 +182,29 @@ def enrich_game(game,summary,event,team):
     home=next((x['team'].get('abbreviation') for x in sides if x.get('homeAway')=='home'),None)
     stamp=comp.get('date') or event.get('date')
     report=official_for_game(stamp,team.get('abbreviation'),code(away)+'@'+code(home)) if away and home else unavailable('Matchup is unavailable for a safe report join.')
+    return attach_report(game,report)
+
+def attach_report(game,report):
+    from collector import classify_dnp
     for record in report['records']:
-        matches=[p for p in game['players'] if name_key(p['name'])==name_key(record['player_full_name'])]
+        if record.get('source_player_name') is not None:
+            record.setdefault('source_player_name_raw',record['source_player_name'])
+            record['source_player_name']=clean_name(record['source_player_name'])
+        record['player_full_name']=clean_name(record['player_full_name'])
+        classification=classify_dnp(record.get('reported_reason',''))
+        record['category']=classification['dnp_category']
+        record['health_related_cause_unknown']=classification['dnp_category']=='unknown' and classification['health_dnp']
+        target_key=name_key(record['player_full_name'])
+        matches=[p for p in game['players'] if target_key and target_key in {name_key(n) for n in [p['name']]+p.get('source_names',[]) if n}]
         player=matches[0] if len(matches)==1 else None
         record.update(player_id=player['id'] if player else None,
                       actual_participation=player['participation_status'] if player else 'box_score_unavailable' if game.get('box_score_status')=='unavailable' else 'not_listed_in_box_score',
                       reported_minutes=player['reported_minutes'] if player else None,
-                      join_method='exact_normalized_name' if player else 'unmatched')
+                      join_method=('exact_normalized_name' if name_key(player['name'])==name_key(record['player_full_name']) else 'exact_source_name_variant') if player else 'unmatched',
+                      unmatched_reason=None if player else 'box_score_unavailable' if game.get('box_score_status')=='unavailable' else 'ambiguous_source_names' if len(matches)>1 else 'no_exact_source_name',
+                      report_participation_discrepancy=(record.get('reported_status')=='Out' and player is not None and player['played'] is True))
     game['official_report']=report
     game['official_report_counts']={c:sum(r['category']==c for r in report['records']) for c in ('injury','illness','other','unknown')} if report['status']=='available' else None
+    game['official_health_unspecified']=sum(r['health_related_cause_unknown'] for r in report['records']) if report['status']=='available' else None
+    game['official_out_played']=sum(r['report_participation_discrepancy'] for r in report['records']) if report['status']=='available' else None
     return game
