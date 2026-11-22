@@ -8,6 +8,7 @@ from threading import Lock
 import time
 from flask import Flask, jsonify, render_template, request
 from collector import collect, teams
+from season_coverage import catalog as coverage_catalog
 
 app=Flask(__name__)
 ROOT=Path(__file__).parent
@@ -19,7 +20,8 @@ def index(): return render_template('index.html')
 
 def season_options():
     current=date.today().year
-    return dict(min_season=1997,current_season=current,max_season=current+1)
+    coverage=coverage_catalog().get('seasons',{})
+    return dict(min_season=1997,current_season=current,max_season=current+1,available_seasons=sorted([int(y) for y,v in coverage.items() if v.get('selectable') and int(y)<=current],reverse=True),coverage=coverage,coverage_checked_at=coverage_catalog().get('checked_at'))
 
 @app.get('/api/seasons')
 def seasons(): return jsonify(season_options())
@@ -27,11 +29,19 @@ def seasons(): return jsonify(season_options())
 @app.get('/api/teams')
 def catalog(): return jsonify(teams=teams(),**season_options())
 
+@app.get('/api/current-injuries')
+def current_injuries():
+    from current_injuries import latest
+    return jsonify(latest())
+
 @app.get('/api/snapshot')
 def snapshot():
     path=ROOT/'data'/'snapshot.json'
     if not path.exists(): return jsonify(error='No saved data yet. Choose a team and load games.'),404
-    return jsonify(json.loads(path.read_text()))
+    data=json.loads(path.read_text())
+    from season_coverage import for_season
+    data['season_coverage']=for_season(data['season'])
+    return jsonify(data)
 
 @app.post('/api/query')
 def query():

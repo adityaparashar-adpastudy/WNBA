@@ -40,3 +40,14 @@ No zero-error, complete-registry or clinical-validation certification is made.
 
 Official report information: https://www.wnba.com/wnba-injury-report
 ESPN source: https://site.api.espn.com/apis/site/v2/sports/basketball/wnba
+
+2026-11-22 follow-up: all dropdown years and source comparison
+- 930 schedule checks: 31 years × 15 current franchise IDs × 2 competitions. First completed player box score sampled per nonempty schedule, not every game.
+- No usable sampled player data: 1997–2002, 2027; hidden from UI. 2013–2026 selectable with coverage notes. Not all defunct franchises are represented.
+- Atlanta 2025 first20 regression: 20 available ESPN boxes, 2 injury DNP rows, incomplete inactive list. Official May25 gamebook names injuries omitted by ESPN. No comprehensive historical backfill is claimed.
+- Latest ESPN source: 44 rows across13 teams, 43 row dates over7 days old. Action Network:68 rows across15 teams, all68 over7 days old at retrieval. These are source listings, not unique/current confirmed injuries, and are isolated from game totals. Team/league primary verification remains pending for outlet rows.
+- Missing games_missed, actual return_date, side, overseas/offseason origin remain blank/unverified. Official “confirmed” confidence concerns report designation only.
+- Source parsers preserve conflicting original status/detail strings. Fetch/parse failures remain unavailable, not zero.
+- Overtime calculation uses two regulation periods before2006, four from2006. Historical source team names preserved in game/player exports.
+
+Final selector criterion: usable player data plus an identifiable injury reason in the availability sample. 2003–2012 have some player data but no identifiable injury reasons in these samples, so they are also hidden pending injury verification. Visible seasons: 2013–2026. Sampling does not prove the hidden years have no public injury information, nor that visible years are complete.
