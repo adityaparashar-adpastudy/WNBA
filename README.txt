@@ -38,8 +38,9 @@ browser; the CLI below saves a new startup snapshot.
 Box-score listed: unique players in that game's team player block. Does not
 prove dressed availability, and is not the total season roster.
 Entered: numeric minutes and no didNotPlay flag, including rounded zero minutes.
-Injury DNP: a non-participant with an explicit injury/illness keyword in the
-source reason. This is a text heuristic. Unspecified reasons are unclassified.
+DNP categories: injury, illness, other, unknown. These describe reported source
+text, not diagnoses. Mixed injury/illness and unspecified health reasons remain
+unknown. Original reason text is retained. Injury counts exclude illness.
 DNP is NOT automatically an injury. In-game injuries remain unknown.
 Minutes are summed player-minutes: 200 regulation, plus 25 per overtime.
 ESPN rounds player minutes, so observed totals may differ. Overtime uses the
@@ -59,8 +60,8 @@ SAVE A DIFFERENT STARTUP SNAPSHOT
 CHECKS
   python -m unittest discover -s tests -v
   node --check static/app.js
-Twelve tests cover metrics, API validation, future-season acceptance, unpublished
-schedules, source year filtering, and expiring team/schedule caches.
+Twenty-two tests cover metrics, API validation, future seasons, cache expiry,
+DNP categories, daylight saving, Phoenix, neutral venues and UTC fallbacks.
 Live ESPN collection and browser query/player/search flows also verified.
 
 FILES
@@ -87,3 +88,20 @@ empty state, rather than an injury count or full-coverage claim.
 Schedule cache expires after 5 minutes; team catalog cache after 24 hours.
 Refresh source fetches immediately. Older box-score responses stay cached.
 Restart the local server after code updates and refresh your browser.
+
+DATA QUALITY FIXES
+Game dates now use the actual venue city timezone. All 22 venues observed in
+the 2025 audit are mapped, including neutral venues. Portland and Toronto are
+also supported. Unrecognized venues use explicitly labeled UTC dates.
+CSV includes date_timezone, date_basis, date_utc and start_time_utc.
+
+DNP injury, illness, other and unknown counts are mutually exclusive.
+INJURY/ILLNESS, COLLAPSED LUNG and RETURN TO COMPETITION RECONDITIONING remain
+unknown, with a health-related flag; their cause is not inferred. Empty and
+unrecognized reasons remain unknown. These are not in-game injury counts.
+
+Verified against retained audit responses for all 310 games / 620 team-game
+rows / 7,093 player-game rows from 2025. Scores, participation, minutes and
+points were preserved. The startup snapshot has been regenerated with the fix.
+Restart the app after updating. The public service requires a GitHub push and
+successful Render deployment before these corrections appear publicly.

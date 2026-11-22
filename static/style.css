@@ -2,3 +2,5 @@
 @media(max-width:650px){.filters label:not(:first-child):not(.refresh){min-width:140px}.filters select{width:100%}}
 .table-scroll,.search-label{position:relative}
 @media(max-width:650px){.filters button{white-space:nowrap;min-width:120px}.filters .refresh{flex-basis:100%}.filters label:not(:first-child):not(.refresh){min-width:155px}}
+
+.dnp-summary{margin-bottom:22px}.dnp-summary .panel-heading{padding-bottom:12px}.dnp-categories{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));padding:0 23px;gap:15px}.dnp-categories>div{display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--border);padding:12px 0;color:var(--muted);font-size:14px}.dnp-categories strong{font-size:24px;color:var(--ink);font-weight:600}.dnp-note{font-size:13px;padding:0 23px 18px;margin:0}@media(max-width:650px){.dnp-categories{grid-template-columns:repeat(2,minmax(0,1fr))}}

@@ -1,5 +1,6 @@
 """WNBA data adapter, consolidated from the supplied ESPN season scrapers."""
-from datetime import date
+from datetime import date, datetime, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import hashlib
 import json
 import os
@@ -50,6 +51,96 @@ def minutes(value):
         return float(value)
     except (ValueError, TypeError): return None
 
+
+# Venue locations, rather than the selected team's home city, handle road and
+# neutral-site games correctly. Unknown locations explicitly fall back to UTC.
+VENUE_TIMEZONES = {
+    ('chicago','IL'): 'America/Chicago',
+    ('seattle','WA'): 'America/Los_Angeles',
+    ('brooklyn','NY'): 'America/New_York',
+    ('new york','NY'): 'America/New_York',
+    ('college park','GA'): 'America/New_York',
+    ('atlanta','GA'): 'America/New_York',
+    ('phoenix','AZ'): 'America/Phoenix',
+    ('uncasville','CT'): 'America/New_York',
+    ('los angeles','CA'): 'America/Los_Angeles',
+    ('washington','DC'): 'America/New_York',
+    ('las vegas','NV'): 'America/Los_Angeles',
+    ('indianapolis','IN'): 'America/Indiana/Indianapolis',
+    ('san francisco','CA'): 'America/Los_Angeles',
+    ('baltimore','MD'): 'America/New_York',
+    ('boston','MA'): 'America/New_York',
+    ('dallas','TX'): 'America/Chicago',
+    ('minneapolis','MN'): 'America/Chicago',
+    ('arlington','TX'): 'America/Chicago',
+    ('san jose','CA'): 'America/Los_Angeles',
+    ('vancouver','BC'): 'America/Vancouver',
+    ('fairfax','VA'): 'America/New_York',
+    ('portland','OR'): 'America/Los_Angeles',
+    ('toronto','ON'): 'America/Toronto',
+}
+
+def game_dates(summary, event):
+    competition = (event.get('competitions') or [{}])[0]
+    header = (summary.get('header',{}).get('competitions') or [{}])[0]
+    stamp = header.get('date') or event.get('date') or ''
+    venue = summary.get('gameInfo',{}).get('venue') or competition.get('venue') or {}
+    address = venue.get('address') or {}
+    key = (str(address.get('city','')).strip().casefold(),str(address.get('state','')).strip().upper())
+    zone = VENUE_TIMEZONES.get(key)
+    try:
+        start = datetime.fromisoformat(stamp.replace('Z','+00:00'))
+        if start.tzinfo is None: raise ValueError('Source has no timezone')
+        utc = start.astimezone(timezone.utc)
+        try:
+            local = utc.astimezone(ZoneInfo(zone)) if zone else utc
+        except ZoneInfoNotFoundError:
+            zone = None
+            local = utc
+        return dict(date=local.date().isoformat(),date_utc=utc.date().isoformat(),
+                    date_timezone=zone or 'UTC',date_basis='venue_local' if zone else 'utc_fallback',
+                    start_time_utc=utc.isoformat().replace('+00:00','Z'))
+    except (ValueError,TypeError):
+        return dict(date=stamp[:10],date_utc=None,date_timezone=None,
+                    date_basis='source_date',start_time_utc=None)
+
+# These are source-text categories, not diagnoses or incident counts. Keep
+# ambiguous health reports unknown rather than guessing injury versus illness.
+INJURY_REASON = re.compile(r"\b(?:injur\w*|ankle|back|knee|acl|mcl|pcl|lcl|concussion|hamstring|shoulder|wrist|hand|finger|thumb|nose|eye|toe|foot|achilles|calf|groin|hip|quad\w*|elbow|rib\w*|leg|neck|abdomen|abdominal|chest|sprain\w*|strain\w*|fractur\w*|contusion|laceration|soreness)\b", re.I)
+OTHER_REASONS = {"COACH'S DECISION", 'NOT WITH TEAM', 'PERSONAL', 'PERSONAL REASONS',
+                 'REST', 'SUSPENDED BY LEAGUE', 'PLAYER SUSPENDED', 'SUSPENSION',
+                 'OVERSEAS', 'DID NOT DRESS', 'DID NOT PLAY', 'INACTIVE',
+                 'NOT WITH TEAM - PREGNANCY', 'NOT INJURY RELATED', 'NON-INJURY RELATED'}
+
+def classify_dnp(reason):
+    normalized = re.sub(r'\s+',' ',str(reason or '').upper().replace('’',"'")).strip()
+    normalized = re.sub(r'^DNP\s*[-:]\s*','',normalized)
+    if not normalized:
+        return dict(dnp_category='unknown',health_dnp=False,classification_note='No source reason reported')
+    if normalized in OTHER_REASONS or re.search(r'\b(?:NOT|NON)[ -]INJURY[ -]RELATED\b',normalized):
+        return dict(dnp_category='other',health_dnp=False,classification_note='Reported non-injury reason or participation status')
+    injury = bool(INJURY_REASON.search(normalized))
+    illness = bool(re.search(r'\b(?:ILLNESS|ILL|SICKNESS|FLU|COVID(?:-19)?)\b',normalized))
+    if (injury and illness) or normalized in {'COLLAPSED LUNG','RETURN TO COMPETITION RECONDITIONING'}:
+        return dict(dnp_category='unknown',health_dnp=True,classification_note='Health-related source reason; injury versus illness is unspecified')
+    if illness:
+        return dict(dnp_category='illness',health_dnp=True,classification_note='Illness reported in the source')
+    if injury:
+        return dict(dnp_category='injury',health_dnp=True,classification_note='Injury or body-site reason reported in the source')
+    return dict(dnp_category='unknown',health_dnp=False,classification_note='Unrecognized source reason; review required')
+
+def dnp_counts(players):
+    counts = {category:0 for category in ('injury','illness','other','unknown')}
+    health_unspecified = 0
+    for player in players:
+        if player['played']: continue
+        category = player.get('dnp_category') or 'unknown'
+        counts[category] += 1
+        health_unspecified += int(category == 'unknown' and player.get('health_dnp',False))
+    return dict(injury_dnp=counts['injury'],illness_dnp=counts['illness'],
+                other_dnp=counts['other'],unknown_dnp=counts['unknown'],
+                health_unspecified_dnp=health_unspecified)
+
 def parse_players(summary, team_id):
     block = next((b for b in summary.get('boxscore',{}).get('players',[]) if str(b.get('team',{}).get('id')) == str(team_id)), None)
     if block is None: raise ValueError('Team player box score is missing')
@@ -65,8 +156,8 @@ def parse_players(summary, team_id):
             # A numeric zero can represent rounded sub-minute participation.
             played = not dnp and mp is not None
             reason = str(row.get('reason') or '')
-            # Evidence label only; this is not a count of in-game injuries.
-            injury = not played and bool(re.search(r'injur|ankle|back|knee|acl|concussion|hamstring|shoulder|wrist|hand|finger|nose|eye|toe|foot|achilles|calf|groin', reason, re.I))
+            classification = classify_dnp(reason) if not played else dict(dnp_category=None,health_dnp=False,classification_note=None)
+            injury = classification['dnp_category'] == 'injury'
             pid = str(athlete.get('id') or athlete.get('displayName','Unknown'))
             players[pid] = dict(
                 id=pid,
@@ -75,6 +166,7 @@ def parse_players(summary, team_id):
                 minutes=mp if played else None,
                 played=played,reason=reason,
                 injury_dnp=injury,
+                **classification,
                 starter=bool(row.get('starter')),
                 points=stats.get('PTS',stats.get('POINTS','—'))
                 )
@@ -123,12 +215,12 @@ def collect(team, season, season_type=2, limit=10, progress=None, refresh=False)
             period=summary.get('header',{}).get('competitions',[{}])[0].get('status',{}).get('period') or comp.get('status',{}).get('period')
             ot=max(0,int(period)-4) if period else None
             score=lambda side: str(side.get('score',{}).get('displayValue','')) if isinstance(side.get('score'),dict) else str(side.get('score',''))
-            games.append(dict(id=event['id'],date=event['date'][:10],opponent=opponent['team'].get('abbreviation',''),opponent_name=opponent['team'].get('displayName',''),home_away=own.get('homeAway'),result='W' if own.get('winner') is True else 'L' if own.get('winner') is False else '—',score=f'{score(own)} – {score(opponent)}',rostered=len(players),entered=len(played),dnp=len(players)-len(played),injury_dnp=sum(p['injury_dnp'] for p in players),minutes=round(sum(min_values),2) if played else None,overtime=ot,in_game_injuries=None,players=players,source=f'https://www.espn.com/wnba/boxscore/_/gameId/{event["id"]}'))
+            games.append(dict(id=event['id'],**game_dates(summary,event),opponent=opponent['team'].get('abbreviation',''),opponent_name=opponent['team'].get('displayName',''),home_away=own.get('homeAway'),result='W' if own.get('winner') is True else 'L' if own.get('winner') is False else '—',score=f'{score(own)} – {score(opponent)}',rostered=len(players),entered=len(played),dnp=len(players)-len(played),**dnp_counts(players),minutes=round(sum(min_values),2) if played else None,overtime=ot,in_game_injuries=None,players=players,source=f'https://www.espn.com/wnba/boxscore/_/gameId/{event["id"]}'))
         except (requests.RequestException, ValueError, KeyError, IndexError, StopIteration) as error:
             errors.append(dict(game_id=event['id'],message=str(error)))
         time.sleep(.15)
     if progress: progress(len(events),len(events))
-    return dict(team=team_info,season=season,season_type=season_type,games=games,completed_games=total,requested_games=len(events),errors=errors,fetched_at=time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),source='ESPN WNBA',notes=['Rostered means players listed in each game box score; dressed availability is not verified.','Injury-related DNP counts explicit reason keywords, not in-game injury events. Unspecified DNP reasons remain unclassified.','200 player-minutes in regulation; 25 per overtime. Rounded source minutes may vary.'])
+    return dict(team=team_info,season=season,season_type=season_type,games=games,completed_games=total,requested_games=len(events),errors=errors,fetched_at=time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),source='ESPN WNBA',schema_version=2,notes=['Rostered means players listed in each game box score; dressed availability is not verified.','DNP reasons are categorized as injury, illness, other or unknown. Mixed injury/illness and unspecified health reasons remain unknown. These are not diagnoses or in-game injury events.','Dates use venue-local time; unknown venue timezones use explicitly labeled UTC.','200 player-minutes in regulation; 25 per overtime. Rounded source minutes may vary.'])
 
 if __name__=='__main__':
     import argparse

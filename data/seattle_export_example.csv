@@ -1,6 +1,6 @@
-"date","opponent","result","score","rostered","entered","dnp","injury_dnp","minutes","overtime","in_game_injuries","source"
-"2025-05-18","PHX","L","59 – 81","11","10","1","1","200","0","","https://www.espn.com/wnba/boxscore/_/gameId/401736117"
-"2025-05-20","DAL","W","79 – 71","10","8","2","0","199","0","","https://www.espn.com/wnba/boxscore/_/gameId/401736120"
-"2025-05-24","PHX","W","77 – 70","11","10","1","0","200","0","","https://www.espn.com/wnba/boxscore/_/gameId/401736131"
-"2025-05-25","LV","W","102 – 82","11","10","1","1","201","0","","https://www.espn.com/wnba/boxscore/_/gameId/401736137"
-"2025-05-28","MIN","L","77 – 82","11","10","1","1","198","0","","https://www.espn.com/wnba/boxscore/_/gameId/401736140"
+date,date_timezone,date_basis,date_utc,start_time_utc,opponent,result,score,rostered,entered,dnp,injury_dnp,illness_dnp,other_dnp,unknown_dnp,health_unspecified_dnp,minutes,overtime,in_game_injuries,source
+2025-05-17,America/Phoenix,venue_local,2025-05-18,2025-05-18T02:00:00Z,PHX,L,59 – 81,11,10,1,1,0,0,0,0,200.0,0,,https://www.espn.com/wnba/boxscore/_/gameId/401736117
+2025-05-19,America/Chicago,venue_local,2025-05-20,2025-05-20T00:00:00Z,DAL,W,79 – 71,10,8,2,0,0,2,0,0,199.0,0,,https://www.espn.com/wnba/boxscore/_/gameId/401736120
+2025-05-23,America/Los_Angeles,venue_local,2025-05-24,2025-05-24T02:00:00Z,PHX,W,77 – 70,11,10,1,0,0,1,0,0,200.0,0,,https://www.espn.com/wnba/boxscore/_/gameId/401736131
+2025-05-25,America/Los_Angeles,venue_local,2025-05-25,2025-05-25T22:00:00Z,LV,W,102 – 82,11,10,1,1,0,0,0,0,201.0,0,,https://www.espn.com/wnba/boxscore/_/gameId/401736137
+2025-05-27,America/Chicago,venue_local,2025-05-28,2025-05-28T00:00:00Z,MIN,L,77 – 82,11,10,1,1,0,0,0,0,198.0,0,,https://www.espn.com/wnba/boxscore/_/gameId/401736140
